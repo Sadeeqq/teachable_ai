@@ -1,53 +1,75 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # embeddings.py — Vector generation and Pinecone operations
-# Uses sentence-transformers (all-MiniLM-L6-v2) to generate 384-dim vectors.
-# This smaller model is used instead of all-mpnet-base-v2 (768-dim) specifically
-# to fit within Render's free-tier 512MB RAM limit. Quality tradeoff is minor
-# for typical study-document RAG retrieval.
-# Handles upsert, query, and deletion in Pinecone.
+#
+# Uses Pinecone's HOSTED inference API (multilingual-e5-large, 1024-dim) instead
+# of running sentence-transformers/PyTorch locally. PyTorch alone uses 300-400MB+
+# of RAM just to import, which exceeded Render's free-tier 512MB limit. Pinecone
+# now does the embedding computation on their servers — our backend just makes
+# lightweight API calls. No local model loading, no PyTorch dependency at all.
+#
+# ⚠️ Your Pinecone index MUST be created with dimension=1024 to match this model.
 # ══════════════════════════════════════════════════════════════════════════════
 
 import os
 from typing import List, Dict, Any
-from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone
 
-# ── Load model once at startup (cached after first load) ─────────────────────
-# all-MiniLM-L6-v2 produces 384-dimensional vectors — matches your Pinecone index
-# ⚠️ Your Pinecone index MUST be created with dimension=384 to match this model.
-print('Loading embedding model…')
-_model = SentenceTransformer('all-MiniLM-L6-v2')
-print('Embedding model ready.')
+EMBED_MODEL = 'multilingual-e5-large'   # Pinecone-hosted, 1024 dimensions
 
 # ── Pinecone client ───────────────────────────────────────────────────────────
 _pinecone_client = None
 _pinecone_index  = None
 
-def get_pinecone_index():
-    global _pinecone_client, _pinecone_index
-    if _pinecone_index is None:
-        api_key    = os.getenv('PINECONE_API_KEY')
-        index_name = os.getenv('PINECONE_INDEX_NAME', 'teachable')
+def get_pinecone_client() -> Pinecone:
+    global _pinecone_client
+    if _pinecone_client is None:
+        api_key = os.getenv('PINECONE_API_KEY')
         if not api_key:
             raise RuntimeError('PINECONE_API_KEY environment variable is not set.')
         _pinecone_client = Pinecone(api_key=api_key)
-        _pinecone_index  = _pinecone_client.Index(index_name)
+    return _pinecone_client
+
+
+def get_pinecone_index():
+    global _pinecone_index
+    if _pinecone_index is None:
+        index_name = os.getenv('PINECONE_INDEX_NAME', 'teachable')
+        client     = get_pinecone_client()
+        _pinecone_index = client.Index(index_name)
     return _pinecone_index
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Generate embeddings
+# Generate embeddings via Pinecone's hosted inference API
 # ══════════════════════════════════════════════════════════════════════════════
-def embed_texts(texts: List[str]) -> List[List[float]]:
-    """Generate 384-dim embeddings for a list of strings."""
-    vectors = _model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
-    return vectors.tolist()
+def embed_texts(texts: List[str], input_type: str = 'passage') -> List[List[float]]:
+    """
+    Generate 1024-dim embeddings for a list of strings using Pinecone's hosted
+    multilingual-e5-large model. input_type is 'passage' for document chunks
+    being stored, or 'query' for search questions — the model is asymmetric
+    and expects this distinction for best retrieval quality.
+    """
+    client = get_pinecone_client()
+
+    # Pinecone's embed API accepts up to 96 inputs per call — batch if needed
+    batch_size  = 90
+    all_vectors = []
+
+    for i in range(0, len(texts), batch_size):
+        batch  = texts[i:i + batch_size]
+        result = client.inference.embed(
+            model=EMBED_MODEL,
+            inputs=batch,
+            parameters={'input_type': input_type, 'truncate': 'END'},
+        )
+        all_vectors.extend([item['values'] for item in result.data])
+
+    return all_vectors
 
 
-def embed_single(text: str) -> List[float]:
-    """Generate a single embedding vector."""
-    vector = _model.encode([text], normalize_embeddings=True)
-    return vector[0].tolist()
+def embed_single(text: str, input_type: str = 'query') -> List[float]:
+    """Generate a single embedding vector (defaults to 'query' type for search)."""
+    return embed_texts([text], input_type=input_type)[0]
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -63,7 +85,7 @@ def upsert_chunks(chunks: List[Dict[str, Any]]) -> int:
 
     index   = get_pinecone_index()
     texts   = [c['text'] for c in chunks]
-    vectors = embed_texts(texts)
+    vectors = embed_texts(texts, input_type='passage')
 
     # Build Pinecone upsert payload
     upsert_data = []
@@ -104,7 +126,7 @@ def search_chunks(
     }
     """
     index         = get_pinecone_index()
-    query_vector  = embed_single(question)
+    query_vector  = embed_single(question, input_type='query')
 
     results = index.query(
         vector=query_vector,

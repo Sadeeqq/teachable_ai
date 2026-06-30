@@ -9,11 +9,8 @@ firebase-admin==6.5.0
 # PDF processing
 PyPDF2==3.0.1
 
-# Embeddings
-sentence-transformers==3.2.1
-
-# Vector database
-pinecone-client==5.0.1
+# Vector database + hosted embedding inference (no local model/PyTorch needed)
+pinecone-client[grpc]==5.0.1
 
 # LLM
 groq==0.11.0
