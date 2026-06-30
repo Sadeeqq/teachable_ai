@@ -19,4 +19,4 @@ pinecone-client==5.0.1
 groq==0.11.0
 
 # Data validation (used by main.py request models)
-pydantic==2.9.2
+pydantic==2.10.3
