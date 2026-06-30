@@ -1,6 +1,9 @@
 # ══════════════════════════════════════════════════════════════════════════════
 # embeddings.py — Vector generation and Pinecone operations
-# Uses sentence-transformers (all-mpnet-base-v2) to generate 768-dim vectors.
+# Uses sentence-transformers (all-MiniLM-L6-v2) to generate 384-dim vectors.
+# This smaller model is used instead of all-mpnet-base-v2 (768-dim) specifically
+# to fit within Render's free-tier 512MB RAM limit. Quality tradeoff is minor
+# for typical study-document RAG retrieval.
 # Handles upsert, query, and deletion in Pinecone.
 # ══════════════════════════════════════════════════════════════════════════════
 
@@ -10,9 +13,10 @@ from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone
 
 # ── Load model once at startup (cached after first load) ─────────────────────
-# all-mpnet-base-v2 produces 768-dimensional vectors — matches your Pinecone index
+# all-MiniLM-L6-v2 produces 384-dimensional vectors — matches your Pinecone index
+# ⚠️ Your Pinecone index MUST be created with dimension=384 to match this model.
 print('Loading embedding model…')
-_model = SentenceTransformer('all-mpnet-base-v2')
+_model = SentenceTransformer('all-MiniLM-L6-v2')
 print('Embedding model ready.')
 
 # ── Pinecone client ───────────────────────────────────────────────────────────
@@ -35,7 +39,7 @@ def get_pinecone_index():
 # Generate embeddings
 # ══════════════════════════════════════════════════════════════════════════════
 def embed_texts(texts: List[str]) -> List[List[float]]:
-    """Generate 768-dim embeddings for a list of strings."""
+    """Generate 384-dim embeddings for a list of strings."""
     vectors = _model.encode(texts, show_progress_bar=False, normalize_embeddings=True)
     return vectors.tolist()
 
