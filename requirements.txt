@@ -1,0 +1,22 @@
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+python-dotenv==1.0.1
+
+# Firebase token verification
+firebase-admin==6.5.0
+
+# PDF processing
+PyPDF2==3.0.1
+
+# Embeddings
+sentence-transformers==3.2.1
+
+# Vector database
+pinecone-client==5.0.1
+
+# LLM
+groq==0.11.0
+
+# Data validation (used by main.py request models)
+pydantic==2.9.2
