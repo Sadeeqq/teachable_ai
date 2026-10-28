@@ -1,0 +1,21 @@
+# dependencies
+/node_modules
+
+# next.js build output
+/.next/
+/out/
+
+# environment variables — NEVER commit real keys
+.env
+.env.local
+.env.*.local
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
